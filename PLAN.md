@@ -5,18 +5,20 @@
 
 Статусы: ⬜ не начат · 🟨 в работе · ✅ готов
 
-## 📍 Где остановились (18.10.2026)
-✅ Этап 1 готов и закоммичен (`1f4deb5`). Сейчас — **этап 2, шаг 3 из 4: подключение к БД через pgxpool**.
+## 📍 Где остановились (24.10.2026)
+✅ Этапы 0–2 готовы. Сейчас — **этап 3: `/api/auth` + JWT**, шаг 2 из 6.
 
-**▶ Начать следующую сессию с:** живая проверка ретраев пройдена (4/4, 19.10.2026). Осталось: коммит `feat: add ping retries with exponential backoff` (если ещё не сделан), затем шаг 4 (CHECK в psql) и ревью этапа 2.
+**▶ Начать следующую сессию с:** шаг 3.2 — `internal/domain` (`User`, sentinel-ошибки) + `internal/repository` пользователей на pgx (`GetByUsername`, `Create` с `ON CONFLICT (username) DO NOTHING RETURNING id`). Шаг 3.1 готов 24.10.2026: тесты token зелёные (`-race -count=20`), lint 0; `tampered` подделывает payload (`user_id: 2`) со старой подписью → падает именно на подписи. Если ещё не закоммичено — коммит `feat: add jwt token manager`.
 
-Шаги этапа 2:
-1. ✅ Схема: `migrations/000001_init.up.sql` / `.down.sql` — 4 таблицы, PK/FK, `CHECK`, `UNIQUE`, 2 индекса на `transfers`, 10 товаров в `merch`. Проверено руками через psql: up → down → up без ошибок. T6/T7/T8 записаны в DECISIONS.
-2. ✅ Миграции golang-migrate: сервис `migrate` (`migrate/migrate:v4.18.1`) в compose, цепочка `db` (healthy) → `migrate` (completed) → сервис. Проверено: `down -v` → `up --build` → `1/u init`, 5 таблиц, `schema_migrations = 1|f`; повторный `up` → `no change`. Закоммичено (`82820e8`).
-3. 🟨 Подключение: `pgxpool` в `internal/storage/postgres`, настройки пула, `Ping` с ретраями при старте, `pool.Close()` при shutdown.
-   **3а: config ✅ (закоммичено)** — ✅ поля пула (`SSLMode`, `MaxConns`=25, `MinConns`=5, `MaxConnLifetime`=1h, `MaxConnIdleTime`=30m); ✅ `DSN()` через `net/url` с doc-комментом (lint 0 issues). ✅ валидация в `Load()` (`MaxConns > 0`, `MinConns >= 0`, `Min <= Max`); ✅ `TestDatabaseDSN` 3/3 + `TestLoad` 8/8 PASS (`-race`, чистое env), lint 0 issues; ✅ новые переменные в `.env.example`. Мелочь (сказано один раз): `RawQuery` → `q`, разбить длинный литерал.
-   **3б** ✅ `NewPool` в `internal/storage/postgres.go`: ParseConfig → поля пула → NewWithConfig → `Ping` с ретраями (10 попыток, backoff 100 мс → потолок 2 с, `select` на `ctx.Done()`/`time.After`), `Close()` на всех путях ошибки; build/vet/lint 0 issues. · **3в** ✅ `main`: `NewPool(ctx, …)` внутри `run` сразу после `config.Load()`, `defer pool.Close()` (закрывается после `srv.Shutdown`). ✅ **живая проверка 4/4** (19.10.2026): 1) с БД стартует сразу; 2) без БД — 10 попыток, в ошибке видна причина `connection refused`; 3) `docker compose start db` на 5-й попытке — 6-я проходит, сервер стартует; 4) Ctrl+C — выход мгновенно. ⬜ коммит `feat:`.
-4. ⬜ ← следующий. Проверка `CHECK`-ограничений руками через psql (попытка уйти в минус → ошибка БД), ревью, коммит.
+Шаги этапа 3 (порядок: от изолированного к связующему):
+1. ✅ `internal/token`: `Manager` (secret, ttl), `Generate(userID)`, `Parse(token)`; проверка алгоритма (`WithValidMethods`) и `exp`; sentinel `ErrInvalidToken`. Тесты: валидный, просроченный, чужой секрет, `alg: none`, испорченный, пустой.
+2. ⬜ `internal/domain` (модель `User`, sentinel-ошибки) + репозиторий пользователей на pgx: `GetByUsername`, `Create` c `ON CONFLICT (username) DO NOTHING` (гонка первой регистрации). ← следующий
+3. ⬜ `internal/service` auth: интерфейсы репозитория/токенов на стороне потребителя, bcrypt, логика «нет → создать, есть → сверить пароль». Юнит-тесты на моках (mockery).
+4. ⬜ handler `POST /api/auth`: декодирование JSON с лимитом тела, валидация (DECISIONS 2), маппинг ошибок → 400/401/500, `ErrorResponse{errors}`. Тесты через `httptest`.
+5. ⬜ middleware: `Authorization: Bearer`, `Parse`, userID в `context` (свой тип ключа), 401. Тесты через `httptest`.
+6. ⬜ сборка в `main`, живая проверка curl'ом, ревью этапа, коммит. bcrypt cost — настраиваемый через env, окончательный выбор (T10) на этапе 8.
+
+Этап 2 закрыт 19.10.2026: живая проверка ретраев 4/4, ограничения проверены в psql, ревью без критичных замечаний; желательные правки схемы решено не делать.
 
 Хвостов нет (`errch` и перевод строки в `.env.example` — решено оставить как есть).
 
@@ -49,7 +51,7 @@ graceful shutdown (SIGTERM), multi-stage Dockerfile, compose: сети, healthch
 - Чистый старт: `docker compose down -v && docker compose up --build` работает без ручных правок.
 **На что обратить внимание:** шаблонный Dockerfile собирает `./internal/cmd`, а мы будем собирать `./cmd/shop`. Его нужно поправить и сделать multi-stage (итоговый образ получится в десятки МБ вместо ~1 ГБ).
 
-## Этап 2. Схема БД, миграции, подключение 🟨
+## Этап 2. Схема БД, миграции, подключение ✅
 **Цель:** таблицы созданы миграциями, сервис подключается к БД через пул.
 **Изучу:** проектирование схемы, `CHECK`/`UNIQUE`/`FOREIGN KEY`, индексы, golang-migrate, `pgx/v5` + `pgxpool`.
 **Критерии готовности:**
@@ -60,7 +62,7 @@ graceful shutdown (SIGTERM), multi-stage Dockerfile, compose: сети, healthch
 - Пул настроен (max conns), `Ping` при старте с ретраями.
 **На что обратить внимание:** деньги храним только как целые числа (`integer`/`bigint`), никаких float. Каждое ограничение схемы — это защита от бага, который ты ещё не написал.
 
-## Этап 3. Авторизация: `/api/auth` + JWT middleware ⬜
+## Этап 3. Авторизация: `/api/auth` + JWT middleware 🟨
 **Цель:** вход и автоматическая регистрация, выдача JWT, защита остальных ручек.
 **Изучу:** слои handler → service → repository, интерфейсы на стороне потребителя, bcrypt,
 JWT (`golang-jwt/jwt/v5`), middleware, передача userID через `context`, sentinel-ошибки + `errors.Is`,
