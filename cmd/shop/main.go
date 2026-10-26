@@ -12,7 +12,10 @@ import (
 	"syscall"
 
 	"github.com/ealia28/avito-merch2025internship/internal/config"
+	"github.com/ealia28/avito-merch2025internship/internal/handler"
+	"github.com/ealia28/avito-merch2025internship/internal/service"
 	"github.com/ealia28/avito-merch2025internship/internal/storage"
+	"github.com/ealia28/avito-merch2025internship/internal/token"
 )
 
 func run(logger *slog.Logger) error {
@@ -30,12 +33,22 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	userRepo := storage.NewUserRepo(pool)
+
+	tokens := token.NewManager(cfg.JWT.Secret, cfg.JWT.TTL)
+
+	authSvc := service.NewAuthService(userRepo, tokens, cfg.Auth.BcryptCost)
+
+	authHandler := handler.NewAuthHandler(authSvc, logger)
+
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	mux.HandleFunc("POST /api/auth", authHandler.Auth)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Server.Port,

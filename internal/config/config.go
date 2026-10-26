@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const minJWTSecretLen = 32
@@ -56,6 +57,11 @@ type Config struct {
 	Server   Server   `envPrefix:"SERVER_"`
 	Database Database `envPrefix:"DATABASE_"`
 	JWT      JWT      `envPrefix:"JWT_"`
+	Auth     Auth     `envPrefix:"AUTH_"`
+}
+
+type Auth struct {
+	BcryptCost int `env:"BCRYPT_COST" envDefault:"10"`
 }
 
 // Load читает конфигурацию из переменных окружения и проверяет её.
@@ -77,6 +83,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Database.MaxConns < cfg.Database.MinConns {
 		return nil, fmt.Errorf("database max conns(%d) must be greater than or equal to min conns(%d)", cfg.Database.MaxConns, cfg.Database.MinConns)
+	}
+	if bcrypt.MinCost > cfg.Auth.BcryptCost || cfg.Auth.BcryptCost > bcrypt.MaxCost {
+		return nil, fmt.Errorf("auth bcrypt cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
 	}
 	return &cfg, nil
 }

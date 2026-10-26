@@ -34,7 +34,7 @@
 | T7 | Инвентарь: лог покупок или счётчик (user, item, qty) | Счётчик `inventory(user_id, merch_id, quantity)`, составной PK `(user_id, merch_id)`. Ответ `/api/info` берётся без `GROUP BY`, покупка — один upsert `INSERT ... ON CONFLICT DO UPDATE SET quantity = quantity + 1`. PK заодно даёт индекс по `user_id` | ✅ |
 | T8 | Миграции | golang-migrate, SQL-файлы в `migrations/`, отдельный сервис `migrate` в compose: `db` (healthy) → `migrate` (completed) → `shop`. Сервис сам не мигрирует: нет гонки миграций при нескольких репликах, приложению не нужны права на DDL | ✅ |
 | T9 | E2E-окружение | docker-compose.e2e.yaml / testcontainers-go | ❓ |
-| T10 | bcrypt cost | | ❓ |
+| T10 | bcrypt cost | Задаётся через `AUTH_BCRYPT_COST` (по умолчанию 10 = `bcrypt.DefaultCost`), вне `[bcrypt.MinCost, bcrypt.MaxCost]` сервис не стартует. Окончательное значение выберем по результатам нагрузки (этап 8) | ❓ |
 | T11 | Конфигурация | `caarlos0/env`, вложенные структуры (Server / DB / JWT); `JWT_SECRET` обязателен, без него сервис не стартует | ✅ |
 | T12 | Секреты при запуске через compose | `env_file: .env`, переменные Postgres подставляются из того же `.env` через `${...}`. `.env` не коммитится, проверяющий делает `cp .env.example .env` (будет в README). Дефолтные секреты в compose отклонены: не приучаемся коммитить секреты | ✅ |
 | T13 | Docker-образ | Multi-stage: `golang:1.27` → `distroless/static:nonroot`, `CGO_ENABLED=0`, `ENTRYPOINT` в exec-форме (чтобы SIGTERM доходил до процесса). Образ ~20 МБ. `stop_grace_period: 15s` > `SERVER_SHUTDOWN_TIMEOUT` | ✅ |
